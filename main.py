@@ -1,16 +1,46 @@
-# This is a sample Python script.
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), 'src')))
+print(sys.path)
 
-# Press Shift+F10 to execute it or replace it with your code.
-# Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
+from preprocessing.data_transform import load_json_file
+from preprocessing.data_preprocess import preprocess_data
+from train import train_model
+from test_model import test_model
+from utils.logger import get_logger
+
+# import sys
+# sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 
-def print_hi(name):
-    # Use a breakpoint in the code line below to debug your script.
-    print(f'Hi, {name}')  # Press Ctrl+F8 to toggle the breakpoint.
+logger = get_logger(__name__)
 
-
-# Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    print_hi('PyCharm')
+    # 加载数据集
+    json_files = []
+    for root, dirs, files in os.walk("./dataset"):
+        for file in files:
+            if file.endswith(".json"):
+                json_file = os.path.join(root, file)
+                json_files.append(json_file)
 
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
+    raw_data = []
+    for json_file in json_files:
+        raw_data += load_json_file(json_file)
+
+    features, labels = preprocess_data(raw_data)
+
+    # 划分训练集和测试集
+    from sklearn.model_selection import train_test_split
+
+    X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size=0.2, random_state=42)
+
+    logger.info("数据预处理完成")
+
+    # 训练模型
+    model = train_model(X_train, X_test, y_train, y_test)
+
+    # 在测试集上进行评估
+    test_acc = test_model(X_test, y_test, model)
+
+    logger.info("测试集准确率为：{:.2f}%".format(test_acc * 100))

@@ -131,10 +131,10 @@ def train(model, optimizer, criterion, X_train, y_train):
 
 
 # 定义测试函数
-# def test(model, X_test, y_test):
-#     model.eval()
+# def test(models, X_test, y_test):
+#     models.eval()
 #     with torch.no_grad():
-#         output = model(X_test)
+#         output = models(X_test)
 #         y_pred = torch.argmax(output, dim=1).cpu().numpy()
 #         acc = accuracy_score(y_test.cpu().numpy(), y_pred)
 #     return acc
@@ -166,8 +166,8 @@ for epoch in range(epochs):
 
 # 在测试集上进行评估
 # with torch.no_grad():
-#     model.eval()
-#     output = model(X_test)
+#     models.eval()
+#     output = models(X_test)
 #     y_pred = torch.argmax(output, dim=1).cpu().numpy()
 #     acc = accuracy_score(y_test.cpu().numpy(), y_pred)
 #     print('Test Accuracy: {:.2f}%'.format(acc * 100))

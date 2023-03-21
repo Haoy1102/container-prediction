@@ -225,10 +225,10 @@ class DecisionTree(nn.Module):
 
 
 # 定义训练函数
-# def train(model, optimizer, criterion, X_train, y_train):
-#     model.train()
+# def train(models, optimizer, criterion, X_train, y_train):
+#     models.train()
 #     optimizer.zero_grad()
-#     output = model(torch.tensor(X_train).float())
+#     output = models(torch.tensor(X_train).float())
 #     loss = criterion(output, torch.tensor(y_train).long())
 #     loss.backward()
 #     optimizer.step()
@@ -238,7 +238,7 @@ class DecisionTree(nn.Module):
 def train(model, optimizer, criterion, X_train, y_train):
     model.train()
     optimizer.zero_grad()
-    # output = model(torch.tensor(X_train).float().detach())
+    # output = models(torch.tensor(X_train).float().detach())
     output = model(X_train.clone().detach())
     # loss = criterion(output, torch.tensor(y_train).long())
     loss = criterion(output, y_train.clone().detach())
@@ -251,7 +251,7 @@ def train(model, optimizer, criterion, X_train, y_train):
 def test(model, X_test, y_test):
     model.eval()
     with torch.no_grad():
-        # output = model(torch.tensor(X_test).float())
+        # output = models(torch.tensor(X_test).float())
         output = model(X_test.clone().detach())
         y_pred = torch.argmax(output, dim=1).numpy()
         acc = accuracy_score(y_test, y_pred)
