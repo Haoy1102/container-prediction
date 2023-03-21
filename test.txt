@@ -1,0 +1,26 @@
+{ "host": "033292e5", "http.request.duration": 1.828880708, "http.request.method": "HEAD", "http.request.remoteaddr": "e1852826", "http.request.uri": "v2/503550a5/d1002b86/blobs/04f05fc9", "http.request.useragent": "docker/17.04.0-ce go/go1.7.5 git-commit/4845c56 kernel/4.4.0-83-generic os/linux arch/amd64 UpstreamClient(Docker-Client/17.04.0-ce \(linux\))", "http.response.status": 200, "http.response.written": 599, "id": "7e114e8fd5", "timestamp": "2017-07-13T04:48:30.143Z" }, 该格式的数据想要转换为神经网络可以接受的数据集，需要进行怎样的数据预处理，特征值为duration, method, remoteaddr, useragent
+
+from sklearn.preprocessing import OneHotEncoder
+
+# 处理数值型特征
+num_features = ["http.request.duration", "http.response.written"]
+num_data = df[num_features].values
+
+# 处理分类型特征
+cat_features = ["http.request.method", "http.request.remoteaddr", "http.request.useragent"]
+cat_data = df[cat_features].values
+
+# 使用one-hot编码
+encoder = OneHotEncoder()
+cat_data_encoded = encoder.fit_transform(cat_data).toarray()
+
+# 合并特征
+features = np.concatenate((num_data, cat_data_encoded), axis=1)
+
+from sklearn.preprocessing import StandardScaler
+
+# 标准化特征
+scaler = StandardScaler()
+features_scaled = scaler.fit_transform(features)
+
+
