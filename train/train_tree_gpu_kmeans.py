@@ -4,13 +4,13 @@ import torch.nn as nn
 import torch.optim as optim
 from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import OneHotEncoder, StandardScaler, LabelEncoder
+from sklearn.cluster import KMeans
 
 import os
 import json
 import numpy as np
 from sklearn.preprocessing import LabelEncoder
 import time
-import tqdm
 
 # 记录程序开始时间
 start_time = time.time()
@@ -22,9 +22,9 @@ def transform_data(request):
     method = request["http.request.method"]
     remoteaddr = request["http.request.remoteaddr"]
     useragent = request["http.request.useragent"]
-    uri = request["http.request.uri"]
+    label = request["http.request.uri"]
     # 获取标签
-    label = uri.split('/')[1] if len(uri.split('/')) >= 2 else 'default'
+    # label = uri.split('/')[1] if len(uri.split('/')) >= 2 else 'default'
     # 返回特征和标签
     return [duration, method, remoteaddr, useragent, label]
 
@@ -40,8 +40,17 @@ def preprocess_data(raw_data):
     cat_features = ["http.request.method", "http.request.remoteaddr", "http.request.useragent"]
     cat_data = df[cat_features].values
 
+#---------------将lable聚类-----------------
+    # 聚类特征
+    cluster_features = ["label"]
+    cluster_data = df[cluster_features].values
+    # 聚类
+    kmeans = KMeans(n_clusters=50, random_state=0).fit(cluster_data)
+
+    # 将聚类结果添加到数据集中
+    df['cluster'] = kmeans.labels_
     # 使用label编码
-    label_encoded = df["label"].values
+    label_encoded = df["cluster"].values
     # 标签编码
     label_encoder = LabelEncoder()
     label_encoded = label_encoder.fit_transform(label_encoded)
@@ -49,7 +58,6 @@ def preprocess_data(raw_data):
     # 使用one-hot编码
     encoder = OneHotEncoder()
     cat_data_encoded = encoder.fit_transform(cat_data).toarray()
-
     # 合并特征
     features = np.concatenate((num_data, cat_data_encoded), axis=1)
 
@@ -60,7 +68,6 @@ def preprocess_data(raw_data):
     return features_scaled, label_encoded
 
 
-
 # 加载数据集
 json_files = []
 for root, dirs, files in os.walk("../dataset"):
@@ -69,10 +76,8 @@ for root, dirs, files in os.walk("../dataset"):
             json_file = os.path.join(root, file)
             json_files.append(json_file)
 
-
-
 raw_data = []
-for json_file in tqdm.tqdm(json_files, desc="Loading JSON files"):
+for json_file in json_files:
     with open(json_file, 'r') as f:
         try:
             requests = json.load(f)
@@ -84,13 +89,15 @@ for json_file in tqdm.tqdm(json_files, desc="Loading JSON files"):
         except json.JSONDecodeError as json_err:
             print("JSONDecodeError: " + str(json_err) + " in JSON file: " + json_file)
 
-features, labels = preprocess_data(raw_data)
+# 将数据转换为数据帧
+# df = pd.DataFrame(raw_data, columns=["http.request.duration", "http.request.method", "http.request.remoteaddr", "http.request.useragent", "label"])
 
+features, labels = preprocess_data(raw_data)
 
 # 划分训练集和测试集
 from sklearn.model_selection import train_test_split
 
-X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size=0.2, random_state=42,shuffle=True)
+X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size=0.2, random_state=42)
 
 # 将数据集转换为PyTorch中的张量
 import torch
@@ -169,6 +176,12 @@ for epoch in range(epochs):
     print('Epoch [{}/{}], Loss: {:.4f}, Accuracy: {:.2f}%'.format(epoch + 1, epochs, loss, acc * 100))
 
 # 在测试集上进行评估
+# with torch.no_grad():
+#     models.eval()
+#     output = models(X_test)
+#     y_pred = torch.argmax(output, dim=1).cpu().numpy()
+#     acc = accuracy_score(y_test.cpu().numpy(), y_pred)
+#     print('Test Accuracy: {:.2f}%'.format(acc * 100))
 with torch.no_grad():
     model.eval()
     output = model(X_test)

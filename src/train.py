@@ -18,7 +18,7 @@ def train(model, optimizer, criterion, X_train, y_train):
     optimizer.step()
     return loss.item()
 
-def train_model(X_train, X_test, y_train, y_test, epochs=1000, lr=0.01):
+def train_model(X_train, X_test, y_train, y_test, epochs=1000, lr=0.05):
     # 将数据集转换为PyTorch中的张量
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     X_train = torch.tensor(X_train, dtype=torch.float32).to(device)
