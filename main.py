@@ -8,7 +8,7 @@ from preprocessing.data_preprocess import preprocess_data
 from train import train_model
 from test_model import test_model
 from utils.logger import get_logger
-
+import tqdm
 # import sys
 # sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -16,7 +16,6 @@ from utils.logger import get_logger
 logger = get_logger(__name__)
 
 if __name__ == '__main__':
-    # 加载数据集
     json_files = []
     for root, dirs, files in os.walk("./dataset"):
         for file in files:
@@ -25,7 +24,7 @@ if __name__ == '__main__':
                 json_files.append(json_file)
 
     raw_data = []
-    for json_file in json_files:
+    for json_file in tqdm.tqdm(json_files, total=len(json_files)):
         raw_data += load_json_file(json_file)
 
     features, labels = preprocess_data(raw_data)
