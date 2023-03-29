@@ -10,7 +10,6 @@ import json
 import numpy as np
 from sklearn.preprocessing import LabelEncoder
 import time
-import tqdm
 
 # 记录程序开始时间
 start_time = time.time()
@@ -69,10 +68,8 @@ for root, dirs, files in os.walk("../dataset"):
             json_file = os.path.join(root, file)
             json_files.append(json_file)
 
-
-
 raw_data = []
-for json_file in tqdm.tqdm(json_files, desc="Loading JSON files"):
+for json_file in json_files:
     with open(json_file, 'r') as f:
         try:
             requests = json.load(f)
@@ -86,11 +83,10 @@ for json_file in tqdm.tqdm(json_files, desc="Loading JSON files"):
 
 features, labels = preprocess_data(raw_data)
 
-
 # 划分训练集和测试集
 from sklearn.model_selection import train_test_split
 
-X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size=0.2, random_state=42,shuffle=True)
+X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size=0.2, random_state=42)
 
 # 将数据集转换为PyTorch中的张量
 import torch
@@ -168,7 +164,6 @@ for epoch in range(epochs):
     acc = test(model, X_test, y_test)
     print('Epoch [{}/{}], Loss: {:.4f}, Accuracy: {:.2f}%'.format(epoch + 1, epochs, loss, acc * 100))
 
-# 在测试集上进行评估
 with torch.no_grad():
     model.eval()
     output = model(X_test)

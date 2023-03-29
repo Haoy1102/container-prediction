@@ -10,6 +10,8 @@ import re
 import numpy as np
 import time
 import tqdm
+from sklearn.cluster import KMeans
+import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import KMeans
 
@@ -35,8 +37,9 @@ def transform_data(request):
         uri = "v2"
 
     # 获取标签
-    #TODO 如果找第2个数据则100% 出问题
-    label = uri.split('/')[1] if len(uri.split('/')) >= 2 else 'default'
+    label = uri.split('/')[0] if len(uri.split('/')) >= 2 else 'default'
+    # label = uri
+    uri = uri.split('/')[1] if len(uri.split('/')) >= 2 else 'default'
     # if len(uri.split('/')) >= 3:
     #     label = uri.split('/')[2]
     # else:
@@ -67,10 +70,10 @@ def preprocess_data(raw_data):
 
 #---------旧的-------------------------
     # 使用label编码
-    label_encoded = df["label"].values
-    # 标签编码
-    label_encoder = LabelEncoder()
-    label_encoded = label_encoder.fit_transform(label_encoded)
+    # label_encoded = df["label"].values
+    # # 标签编码
+    # label_encoder = LabelEncoder()
+    # label_encoded = label_encoder.fit_transform(label_encoded)
 
 #---------新的------------------------
     # uri_encoded = pd.Series(df["uri"]).astype('category').cat.codes.values.reshape(-1, 1)
@@ -97,7 +100,28 @@ def preprocess_data(raw_data):
     #
     # # 新的标签
     # label_encoded = kmeans.labels_
-#------------------
+#------------使用else方法处理低频率标签压缩----------
+
+    # 统计每个标签出现的次数
+    label_counts = df["label"].value_counts()
+    # 将出现频率低于某个阈值的标签合并为“其他”标签
+    threshold = 100
+    other_labels = label_counts[label_counts < threshold].index
+    df["label"] = df["label"].apply(lambda x: "其他" if x in other_labels else x)
+
+    # 统计每个标签出现的次数
+    # container_counts = df["uri"].value_counts()
+    # threshold = 100
+    # other_labels = container_counts[container_counts < threshold].index
+    # df["uri"] = df["uri"].apply(lambda x: "其他" if x in other_labels else x)
+
+
+    # 使用标签编码
+    label_encoded = df["label"].values
+    label_encoder = LabelEncoder()
+    label_encoded = label_encoder.fit_transform(label_encoded)
+
+    #------------------------------
     # 合并特征
     features = np.concatenate((num_data,timestamp_diff, cat_data_encoded), axis=1)
 
@@ -117,18 +141,31 @@ for root, dirs, files in os.walk("../dataset"):
             json_files.append(json_file)
 
 raw_data = []
-for json_file in tqdm.tqdm(json_files, desc="Loading JSON files"):
-    with open(json_file, 'r') as f:
-        try:
-            requests = json.load(f)
-            for request in requests:
-                data = transform_data(request)
-                raw_data.append(data)
-        except ValueError as value_err:
-            print("ValueError: " + str(value_err) + " in JSON file: " + json_file)
-        except json.JSONDecodeError as json_err:
-            print("JSONDecodeError: " + str(json_err) + " in JSON file: " + json_file)
+# for json_file in tqdm.tqdm(json_files, desc="Loading JSON files"):
+#     with open(json_file, 'r') as f:
+#         try:
+#             requests = json.load(f)
+#             for request in requests:
+#                 data = transform_data(request)
+#                 raw_data.append(data)
+#         except ValueError as value_err:
+#             print("ValueError: " + str(value_err) + " in JSON file: " + json_file)
+#         except json.JSONDecodeError as json_err:
+#             print("JSONDecodeError: " + str(json_err) + " in JSON file: " + json_file)
+def load_data_generator(json_files):
+    for json_file in tqdm.tqdm(json_files, desc="Loading JSON files"):
+        with open(json_file, 'r') as f:
+            try:
+                requests = json.load(f)
+                for request in requests:
+                    data = transform_data(request)
+                    yield data
+            except ValueError as value_err:
+                print("ValueError: " + str(value_err) + " in JSON file: " + json_file)
+            except json.JSONDecodeError as json_err:
+                print("JSONDecodeError: " + str(json_err) + " in JSON file: " + json_file)
 
+raw_data = load_data_generator(json_files)
 features, labels = preprocess_data(raw_data)
 
 # 划分训练集和测试集
@@ -193,7 +230,7 @@ n_features = X_train.shape[1]
 n_classes = len(np.unique(y_train_np))
 lr = 0.05
 epochs = 100
-n_trees = 6
+n_trees = 5
 batch_size = 1024
 
 # 创建模型、优化器和损失函数
@@ -230,6 +267,18 @@ with torch.no_grad():
     y_pred = torch.argmax(output, dim=1).cpu().numpy() # 将张量移动回CPU上
     acc = accuracy_score(y_test.cpu().numpy(), y_pred)
     print('Test Accuracy: {:.2f}%'.format(acc * 100))
+
+import matplotlib.pyplot as plt
+# 获取特征重要度并排序
+feature_importances = model.feature_importances_
+sorted_idx = feature_importances.argsort()
+# 绘制水平条形图
+plt.barh(range(len(sorted_idx)), feature_importances[sorted_idx])
+plt.yticks(range(len(sorted_idx)), X.columns[sorted_idx])
+plt.xlabel('Feature Importance')
+plt.title('Random Forest Feature Importance')
+# 显示图表
+plt.show()
 
 # 记录程序结束时间
 end_time = time.time()
