@@ -56,6 +56,7 @@ class EdgeNodeEnv(gym.Env):
         else:
             raise ValueError("Invalid action: {}".format(action))
 
+        print("Memory:", self.containers_in_memory)
         return self._get_observation(), reward, False, {}
 
     def _get_container_type(self):
@@ -178,7 +179,7 @@ class DQNAgent:
 
         device = next(self.model.parameters()).device  # 获取设备信息
 
-        state = self.env.reset()
+        state = self.current_state
         action = self.act(state)
 
         next_state, reward, done, _ = self.env.step(action)
@@ -231,6 +232,7 @@ env = EdgeNodeEnv(data)
 agent = DQNAgent(env)
 rewards = []
 for i in range(100):
+    agent.current_state = env._get_container_type()
     reward = agent.train(num_steps=100)
     rewards.append(reward)
     print("epoch:{}".format(i))
