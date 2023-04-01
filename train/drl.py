@@ -1,13 +1,5 @@
 import gym
 import torch.nn.functional as F
-import random
-import numpy as np
-import torch
-import torch.nn as nn
-import torch.optim as optim
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 
 class EdgeNodeEnv(gym.Env):
     def __init__(self, data):
@@ -97,7 +89,11 @@ class EdgeNodeEnv(gym.Env):
         return obs
 
 
-
+import random
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
 
 
 class DQN(nn.Module):
@@ -134,12 +130,16 @@ class DQNAgent:
         self.current_epsilon = self.epsilon_start
 
         # 将模型和优化器放置在GPU上
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = DQN(env.observation_space.shape[0], env.action_space.n).to(device)
         self.optimizer = optim.Adam(self.model.parameters(), lr=0.001)
         self.loss_fn = nn.MSELoss()
 
     def act(self, state):
         # 根据当前状态选择动作。
+
+        device = next(self.model.parameters()).device  # 获取设备信息
+
         if random.random() < self.current_epsilon:
             return self.env.action_space.sample()
         else:
@@ -148,8 +148,8 @@ class DQNAgent:
                 return q_values.argmax().item()
 
     def replay_memory(self, batch_size):
-        #TODO 数据类型不对
         # 从经验回放缓冲区中随机抽取一批样本，并使用它们更新模型参数。
+
         for exp in self.memory:
             state, action, reward, next_state = exp
             print("Experience:", exp)
@@ -160,6 +160,8 @@ class DQNAgent:
                     reward, float):
                 print("Invalid data types in experience replay buffer!")
                 # 在此处添加适当修改来修复不正确的数据类型。
+
+        device = next(self.model.parameters()).device  # 获取设备信息
 
         if len(self.memory) < batch_size:
             return
@@ -185,6 +187,9 @@ class DQNAgent:
 
     def train_step(self):
         # 获取当前观察值并选择动作。
+
+        device = next(self.model.parameters()).device  # 获取设备信息
+
         state = self.current_state
         action = self.act(state)
 
@@ -199,6 +204,8 @@ class DQNAgent:
         self.current_state = next_state
         self.current_epsilon = max(self.epsilon_end,
                                    self.current_epsilon - (self.epsilon_start - self.epsilon_end) / self.epsilon_decay)
+
+
         return reward
 
     def train(self, num_steps):
@@ -211,6 +218,7 @@ class DQNAgent:
 
 
 import matplotlib.pyplot as plt
+
 import json
 import os
 from tqdm import tqdm
