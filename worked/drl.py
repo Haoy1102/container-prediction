@@ -13,9 +13,7 @@ class EdgeNodeEnv(gym.Env):
     def reset(self):
         """
         重置环境状态并返回初始观测值。
-
         在本例中，我们假定最初没有任何容器被加载到内存中。
-
         Returns:
             observation (object): 初始观察值。
         """
@@ -43,8 +41,7 @@ class EdgeNodeEnv(gym.Env):
                 reward = -1.0
         elif action == 1:  # 清除旧容器
             if len(self.containers_in_memory) > 0:
-                containers_by_age = sorted(list(self.containers_in_memory), key=lambda x: data.index(
-                    {"http.request.uri": "v2/" + x + "/manifests/c0ca17d4"}))
+                containers_by_age = sorted(list(self.containers_in_memory), key=lambda x: "/".join(x.split("/")[1:3]))
 
                 oldest_container = containers_by_age[0]
 
@@ -67,10 +64,14 @@ class EdgeNodeEnv(gym.Env):
         Returns:
             container_type (str): 容器类型。
         """
-        try:
-            return random.choice([d["http.request.uri"].split("/")[2] for d in self.data])
-        except (IndexError, KeyError):
-            return "default_value"
+        var = []
+        for d in self.data:
+            if "http.request.uri" in d and len(d["http.request.uri"].split("/")) >= 4:
+                uri_parts = d["http.request.uri"].split("/")
+                var.append(uri_parts[1] + "/" + uri_parts[2])
+            else:
+                var.append("default_value")
+        return random.choice(var)
 
     def _get_observation(self):
         """
@@ -207,9 +208,24 @@ class DQNAgent:
 import matplotlib.pyplot as plt
 
 import json
+import os
+from tqdm import tqdm
+
+
 # 加载数据集并解析为JSON格式。
-with open("./data.json", "r") as f:
-    data = json.load(f)
+json_files = []
+for root, dirs, files in os.walk("../dataset/node-9e"):
+    for file in files:
+        if file.endswith(".json"):
+            json_file = os.path.join(root, file)
+            json_files.append(json_file)
+
+data = []
+for json_file in tqdm(json_files):
+    with open(json_file, "r") as f:
+        json_object = json.load(f)
+        data.extend(json_object)
+
 
 env = EdgeNodeEnv(data)
 agent = DQNAgent(env)

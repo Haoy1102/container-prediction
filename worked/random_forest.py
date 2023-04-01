@@ -132,6 +132,9 @@ def preprocess_data(raw_data):
     return features_scaled, label_encoded
 
 
+
+current_dir = os.getcwd()
+print("Current working directory:", current_dir)
 # 加载数据集
 json_files = []
 for root, dirs, files in os.walk("../dataset"):
