@@ -6,7 +6,7 @@ from tqdm import tqdm
 data = []
 # 加载数据集并解析为JSON格式。
 json_files = []
-for root, dirs, files in os.walk("../dataset/node-9e"):
+for root, dirs, files in os.walk("../dataset/test"):
     for file in files:
         if file.endswith(".json"):
             json_file = os.path.join(root, file)

@@ -1,20 +1,29 @@
 import gym
 import torch.nn.functional as F
 import pandas as pd
+import matplotlib.pyplot as plt
+import json
+import os
+from tqdm import tqdm
+import random
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class EdgeNodeEnv(gym.Env):
     def __init__(self, data):
         self.data = data
-        self.memory_size = 10  # 内存大小设为10
+        self.memory_size = 5  # 内存大小设为10
         self.containers_in_memory = set()  # 当前在内存中的容器集合
         self.action_space = gym.spaces.Discrete(2)  # 动作空间有两种：0表示载入新容器，1表示清除旧容器
-        self.observation_space = gym.spaces.Box(low=0, high=1, shape=(len(data[0]) - 2,),
+        self.observation_space = gym.spaces.Box(low=0, high=1, shape=(len(data[0]) - 1,),
                                                 dtype=float)  # 观测空间由数据项中除了host和timestamp以外所有属性组成
 
     def reset(self):
-        """
-            重置环境状态并返回初始观测值。
-        """
+        # 重置环境状态并返回初始观测值。
         self.containers_in_memory.clear()
         return self._get_observation()
 
@@ -66,17 +75,10 @@ class EdgeNodeEnv(gym.Env):
         obs = []
 
         for key in self.data[0]:
-            if key != "host" and key != "timestamp":
+            if key != "host" :
                 obs.append(1.0 if any(key in d and d[key] is not None for d in self.data) else 0.0)
 
         return obs
-
-
-import random
-import numpy as np
-import torch
-import torch.nn as nn
-import torch.optim as optim
 
 
 class DQN(nn.Module):
@@ -113,7 +115,7 @@ class DQNAgent:
         self.current_epsilon = self.epsilon_start
 
         # 将模型和优化器放置在GPU上
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
         self.model = DQN(env.observation_space.shape[0], env.action_space.n).to(device)
         self.optimizer = optim.Adam(self.model.parameters(), lr=0.001)
         self.loss_fn = nn.MSELoss()
@@ -133,16 +135,16 @@ class DQNAgent:
     def replay_memory(self, batch_size):
         # 从经验回放缓冲区中随机抽取一批样本，并使用它们更新模型参数。
 
-        for exp in self.memory:
-            state, action, reward, next_state = exp
-            print("Experience:", exp)
-            print("Types:", type(state), type(action), type(reward), type(next_state))
-
-            if not all(isinstance(i, (float, int)) for i in [state, next_state]) or not isinstance(action,
-                                                                                                   int) or not isinstance(
-                    reward, float):
-                print("Invalid data types in experience replay buffer!")
-                # 在此处添加适当修改来修复不正确的数据类型。
+        # for exp in self.memory:
+        #     state, action, reward, next_state = exp
+        #     print("Experience:", exp)
+        #     print("Types:", type(state), type(action), type(reward), type(next_state))
+        #
+        #     if not all(isinstance(i, (float, int)) for i in [state, next_state]) or not isinstance(action,
+        #                                                                                            int) or not isinstance(
+        #             reward, float):
+        #         print("Invalid data types in experience replay buffer!")
+        #         # 在此处添加适当修改来修复不正确的数据类型。
 
         device = next(self.model.parameters()).device  # 获取设备信息
 
@@ -170,9 +172,6 @@ class DQNAgent:
 
     def train_step(self):
         # 获取当前观察值并选择动作。
-
-        device = next(self.model.parameters()).device  # 获取设备信息
-
         state = self.current_state
         action = self.act(state)
 
@@ -188,24 +187,19 @@ class DQNAgent:
         self.current_epsilon = max(self.epsilon_end,
                                    self.current_epsilon - (self.epsilon_start - self.epsilon_end) / self.epsilon_decay)
 
-
         return reward
 
-    def train(self, num_steps):
+    def train(self, num_epochs):
         total_reward = 0.0
-        for i in range(num_steps):
+        self.current_state = env.reset()
+        for i in range(num_epochs):
             reward = self.train_step()
             total_reward += reward
 
         return total_reward
 
 
-import matplotlib.pyplot as plt
 
-import json
-import os
-from tqdm import tqdm
-from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 
 # 加载数据集并解析为JSON格式。
 json_files = []
@@ -215,18 +209,17 @@ for root, dirs, files in os.walk("../dataset/test"):
             json_file = os.path.join(root, file)
             json_files.append(json_file)
 
-raw_data = []
+data = []
 for json_file in tqdm(json_files):
     with open(json_file, "r") as f:
         json_object = json.load(f)
-        raw_data.extend(json_object)
+        data.extend(json_object)
 
-env = EdgeNodeEnv(raw_data)
+env = EdgeNodeEnv(data)
 agent = DQNAgent(env)
 rewards = []
 for i in range(100):
-    agent.current_state = env._get_container_type()
-    reward = agent.train(num_steps=100)
+    reward = agent.train(num_epochs=100)
     rewards.append(reward)
     print("epoch:{}".format(i))
 
