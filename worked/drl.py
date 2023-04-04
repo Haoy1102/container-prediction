@@ -130,20 +130,21 @@ class DQN(nn.Module):
 
 
 class DQNAgent:
-    def __init__(self, env):
+    def __init__(self, env,parameters):
 
         # 初始化环境和超参数
-
+        gamma, epsilon_start, epsilon_end,\
+        epsilon_decay, learning_rate, memory_capacity = parameters
         self.env = env
-        self.gamma = 0.99  # 折扣因子
-        self.epsilon_start = 1.0  # 贪婪策略起始值
-        self.epsilon_end = 0.01  # 贪婪策略结束值
-        self.epsilon_decay = 5000  # epsilon线性衰减的步数
-        self.learning_rate = 0.001
+        self.gamma = gamma  # 折扣因子
+        self.epsilon_start = epsilon_start  # 贪婪策略起始值
+        self.epsilon_end = epsilon_end  # 贪婪策略结束值
+        self.epsilon_decay = epsilon_decay  # epsilon线性衰减的步数
+        self.learning_rate = learning_rate
 
         # 初始化经验回放缓冲区、当前状态和epsilon值。
 
-        self.memory_capacity = 10000
+        self.memory_capacity = memory_capacity
         self.memory = []
 
         self.current_state = None
@@ -225,9 +226,12 @@ class DQNAgent:
             total_reward += reward
             total_hit += 1 if info.get('hit') else 0
             if done:
+                print("done, used data num:{}".format(i))
                 break
             # print("num_epochs:{}".format(i))
         hit_rate = total_hit / len_data
+        print("hit_rate:{}".format(hit_rate))
+        print("total_reward:{}".format(total_reward))
         return total_reward, hit_rate
 
 
@@ -273,15 +277,6 @@ def preprocess_data(raw_data):
     return container_type
 
 
-# 加载数据集
-json_files = []
-for root, dirs, files in os.walk("../dataset/node-9e-7.13"):
-    for file in files:
-        if file.endswith(".json"):
-            json_file = os.path.join(root, file)
-            json_files.append(json_file)
-
-
 def load_data_generator(json_files):
     for json_file in tqdm(json_files, desc="Loading JSON files"):
         with open(json_file, 'r') as f:
@@ -296,22 +291,47 @@ def load_data_generator(json_files):
                 print("ValueError: " + str(value_err) + " in JSON file: " + json_file)
 
 
+# 加载数据集
+
+def load_json_files(data_path):
+    json_files = []
+    for root, dirs, files in os.walk(data_path):
+        for file in files:
+            if file.endswith(".json"):
+                json_file = os.path.join(root, file)
+                json_files.append(json_file)
+    return json_files
+
+
+data_path = "../dataset/node-9e-7.13"
+
+json_files = load_json_files(data_path)
 raw_data = load_data_generator(json_files)
 data = preprocess_data(raw_data)
-# ----------------
+
+gamma = 0.99  # 折扣因子
+epsilon_start = 1.0  # 贪婪策略起始值
+epsilon_end = 0.01  # 贪婪策略结束值
+epsilon_decay = 5000  # epsilon线性衰减的步数
+learning_rate = 0.001
+# 初始化经验回放缓冲区、当前状态和epsilon值。
+memory_capacity = 10000
+parameters = gamma, epsilon_start, epsilon_end, \
+             epsilon_decay, learning_rate, memory_capacity
 memory_size = 10
 len_data = len(data)
 rewards = []
 hit_rates = []
 
 env = EdgeNodeEnv(data, memory_size)
-agent = DQNAgent(env)
+agent = DQNAgent(env,parameters)
 for i in range(100):
     result = agent.train(num_epochs=5000, len_data=len_data)
     reward, hit_rate = result
     rewards.append(reward)
     hit_rates.append(hit_rate)
     print("epoch:{}".format(i))
+    print("-----------------")
 
 # plt.switch_backend('TkAgg')
 plt.plot(range(len(rewards)), rewards)
