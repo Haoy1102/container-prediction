@@ -65,3 +65,23 @@ print(f"共有{total_count}条数据")
 print(f"共有{len(new_uri_counts)}种不同的v2后面两个部分，记录如下：")
 for uri, count in new_uri_counts.most_common():
     print(f"{uri}: {count} 次，占比{count/total_count:.2%}")
+
+import json
+
+# 创建一个列表来存储结果
+result = []
+
+# 遍历筛选后的数据，将uri和时间戳添加到result列表中
+for item in filtered_data:
+    timestamp_str = item["timestamp"]
+    timestamp = datetime.datetime.fromisoformat(timestamp_str[:-1])
+    if start_time <= timestamp <= end_time:
+        uri_parts = item["http.request.uri"].split("/")[1:2] or ["default"]
+        uri = "/".join(uri_parts)
+        result.append({"uri": uri, "timestamp": timestamp_str})
+
+# 将结果保存为JSON文件
+with open("filtered_data.json", "w") as f:
+    json.dump(result, f)
+
+

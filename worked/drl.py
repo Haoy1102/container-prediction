@@ -253,21 +253,29 @@ class DQNAgent:
 # ----------------------------------------------------------------
 def transform_data(request):
     # 提取特征
-    uri = request["http.request.uri"]
+    uri = request["uri"]
 
-    match = re.search(r"v2/([^/]+)/([^/]+)", uri)
-    if match:
-        uri_parts = match.groups()
-        uri = "/".join(uri_parts)
-    else:
-        uri = "v2"
+    # match = re.search(r"v2/([^/]+)/([^/]+)", uri)
+    # if match:
+    #     uri_parts = match.groups()
+    #     # uri = "/".join(uri_parts)
+    #     uri = uri_parts[0]
+    # else:
+    #     uri = "v2"
 
     return [uri]
 
 
-def preprocess_data(raw_data):
+def preprocess_data(raw_data, threshold=270):
     # 将原始数据转换为数据帧
     df = pd.DataFrame(raw_data, columns=["container_type"])
+
+    # 计算每个容器类型出现的频率
+    freq = df["container_type"].value_counts()
+
+    # 将出现频率低于阈值的类型替换为"else"
+    low_freq_types = freq[freq < threshold].index
+    df["container_type"].replace(low_freq_types, "else", inplace=True)
 
     # 使用标签编码
     container_type = df["container_type"].values
@@ -275,6 +283,7 @@ def preprocess_data(raw_data):
     container_type = label_encoder.fit_transform(container_type)
 
     return container_type
+
 
 
 def load_data_generator(json_files):
@@ -303,7 +312,7 @@ def load_json_files(data_path):
     return json_files
 
 
-data_path = "../dataset/node-9e-7.13"
+data_path = "../dataset/node-dal09-78-6.21"
 
 json_files = load_json_files(data_path)
 raw_data = load_data_generator(json_files)
@@ -318,6 +327,7 @@ learning_rate = 0.001
 memory_capacity = 10000
 parameters = gamma, epsilon_start, epsilon_end, \
              epsilon_decay, learning_rate, memory_capacity
+
 memory_size = 10
 len_data = len(data)
 rewards = []
