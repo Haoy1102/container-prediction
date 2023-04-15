@@ -19,8 +19,9 @@ for json_file in tqdm(json_files):
 
 uris = []
 for item in data:
-    uri_parts = item["http.request.uri"].split("/")[1:3] or ["default"]
-    uris.append("/".join(uri_parts))
+    # uri_parts = item["http.request.uri"].split("/")[1:3] or ["default"]
+    # uris.append("/".join(uri_parts))
+    uris.append(item["uri"])
 
 uri_counts = Counter(uris)
 total_count = sum(uri_counts.values())

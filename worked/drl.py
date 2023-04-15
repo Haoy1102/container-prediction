@@ -254,6 +254,7 @@ class DQNAgent:
 def transform_data(request):
     # 提取特征
     uri = request["uri"]
+    timestamp = request["timestamp"]
 
     # match = re.search(r"v2/([^/]+)/([^/]+)", uri)
     # if match:
@@ -263,12 +264,12 @@ def transform_data(request):
     # else:
     #     uri = "v2"
 
-    return [uri]
+    return [uri,timestamp]
 
 
 def preprocess_data(raw_data, threshold=270):
     # 将原始数据转换为数据帧
-    df = pd.DataFrame(raw_data, columns=["container_type"])
+    df = pd.DataFrame(raw_data, columns=["container_type","timestamp"])
 
     # 计算每个容器类型出现的频率
     freq = df["container_type"].value_counts()

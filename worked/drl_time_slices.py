@@ -9,31 +9,43 @@ import torch.nn as nn
 import torch.optim as optim
 import re
 from sklearn.preprocessing import OneHotEncoder, StandardScaler, LabelEncoder
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+import datetime
 import random
 import gym
 import numpy as np
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+import gym
+import numpy as np
 
 class EdgeNodeEnv(gym.Env):
-    def __init__(self, data, memory_size):
+    def __init__(self, data, memory_size,time_slice_len):
         self.data = data  # 数据集合
         self.memory_size = memory_size  # 内存大小
-        self.containers_in_memory = set()  # 当前在内存中的容器集合
 
         # 定义动作空间和观察空间。
         self.action_space = gym.spaces.Discrete(2)
         self.observation_space = gym.spaces.Box(low=-1, high=1000, shape=(memory_size + 2,), dtype=float)
 
+        self.containers_in_memory = []  # 当前在内存中的容器集合
+
+        # 定义时间片长度
+        self.time_slice_len = time_slice_len
+
+        # 定义内存中缓存的容器列表
+        self.cache_list = []
+        # 定义时间片计数器
+        self.time_step = 0
+
+
     def reset(self):
-        """
-        环境重置函数，在每个 episode 开始时调用。
-        返回值：
-            observation: ndarray. 初始状态下环境观测到的状态信息。
-        """
-        # 清除当前内存中所有容器。
+
+        self.state = np.zeros(n)
+        self.request_list = []
+        self.cache_list = []
+        self.time_step = 0
+
         self.containers_in_memory.clear()
         # 初始化 current_step 变量为第一个请求位置.
         self.current_step = 0
@@ -114,7 +126,6 @@ class EdgeNodeEnv(gym.Env):
 
         return observation
 
-
 class DQN(nn.Module):
     def __init__(self, input_size, output_size):
         super(DQN, self).__init__()
@@ -128,22 +139,22 @@ class DQN(nn.Module):
         x = F.relu(self.fc2(x))
         return self.fc3(x)
 
-
 class DQNAgent:
-    def __init__(self, env):
+    def __init__(self, env,parameters):
 
         # 初始化环境和超参数
-
+        gamma, epsilon_start, epsilon_end,\
+        epsilon_decay, learning_rate, memory_capacity = parameters
         self.env = env
-        self.gamma = 0.99  # 折扣因子
-        self.epsilon_start = 1.0  # 贪婪策略起始值
-        self.epsilon_end = 0.01  # 贪婪策略结束值
-        self.epsilon_decay = 5000  # epsilon线性衰减的步数
-        self.learning_rate = 0.001
+        self.gamma = gamma  # 折扣因子
+        self.epsilon_start = epsilon_start  # 贪婪策略起始值
+        self.epsilon_end = epsilon_end  # 贪婪策略结束值
+        self.epsilon_decay = epsilon_decay  # epsilon线性衰减的步数
+        self.learning_rate = learning_rate
 
         # 初始化经验回放缓冲区、当前状态和epsilon值。
 
-        self.memory_capacity = 10000
+        self.memory_capacity = memory_capacity
         self.memory = []
 
         self.current_state = None
@@ -225,62 +236,60 @@ class DQNAgent:
             total_reward += reward
             total_hit += 1 if info.get('hit') else 0
             if done:
+                print("done, used data num:{}".format(i))
                 break
             # print("num_epochs:{}".format(i))
         hit_rate = total_hit / len_data
+        print("hit_rate:{}".format(hit_rate))
+        print("total_reward:{}".format(total_reward))
         return total_reward, hit_rate
 
-
-# 加载数据集并解析为JSON格式。
-# json_files = []
-# for root, dirs, files in os.walk("../dataset/test"):
-#     for file in files:
-#         if file.endswith(".json"):
-#             json_file = os.path.join(root, file)
-#             json_files.append(json_file)
-#
-# data = []
-# for json_file in tqdm(json_files):
-#     with open(json_file, "r") as f:
-#         json_object = json.load(f)
-#         data.extend(json_object)
-
-
-# ----------------------------------------------------------------
 def transform_data(request):
     # 提取特征
-    uri = request["http.request.uri"]
+    uri = request["uri"]
+    timestamp = request["timestamp"]
 
-    match = re.search(r"v2/([^/]+)/([^/]+)", uri)
-    if match:
-        uri_parts = match.groups()
-        uri = "/".join(uri_parts)
-    else:
-        uri = "v2"
+    # match = re.search(r"v2/([^/]+)/([^/]+)", uri)
+    # if match:
+    #     uri_parts = match.groups()
+    #     # uri = "/".join(uri_parts)
+    #     uri = uri_parts[0]
+    # else:
+    #     uri = "v2"
 
-    return [uri]
+    return [uri,timestamp]
 
-
-def preprocess_data(raw_data):
+def preprocess_data(raw_data, threshold=270):
     # 将原始数据转换为数据帧
-    df = pd.DataFrame(raw_data, columns=["container_type"])
+    df = pd.DataFrame(raw_data, columns=["container_type","timestamp"])
+
+    # 计算每个容器类型出现的频率
+    freq = df["container_type"].value_counts()
+
+    # 将出现频率低于阈值的类型替换为"else"
+    low_freq_types = freq[freq < threshold].index
+    df["container_type"].replace(low_freq_types, "else", inplace=True)
 
     # 使用标签编码
     container_type = df["container_type"].values
     label_encoder = LabelEncoder()
     container_type = label_encoder.fit_transform(container_type)
 
-    return container_type
+    # 将ISO 8601格式的时间戳转换为pandas的时间戳，并将时区设置为UTC
+    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
 
+    # 按照每4秒一个时间片进行分割
+    start_time = pd.Timestamp("2017-06-21T06:00:00.000Z", tz='UTC')
+    end_time = pd.Timestamp("2017-06-21T12:00:00.000Z", tz='UTC')
+    time_slices = pd.date_range(start=start_time, end=end_time, freq="1S")
+    container_type_slices = []
+    for i in range(len(time_slices) - 1):
+        start_time_slice = time_slices[i]
+        end_time_slice = time_slices[i+1]
+        container_type_slice = container_type[(df["timestamp"] >= start_time_slice) & (df["timestamp"] < end_time_slice)]
+        container_type_slices.append(container_type_slice)
 
-# 加载数据集
-json_files = []
-for root, dirs, files in os.walk("../dataset/test"):
-    for file in files:
-        if file.endswith(".json"):
-            json_file = os.path.join(root, file)
-            json_files.append(json_file)
-
+    return container_type_slices
 
 def load_data_generator(json_files):
     for json_file in tqdm(json_files, desc="Loading JSON files"):
@@ -295,23 +304,49 @@ def load_data_generator(json_files):
             except ValueError as value_err:
                 print("ValueError: " + str(value_err) + " in JSON file: " + json_file)
 
+# 加载数据集
+def load_json_files(data_path):
+    json_files = []
+    for root, dirs, files in os.walk(data_path):
+        for file in files:
+            if file.endswith(".json"):
+                json_file = os.path.join(root, file)
+                json_files.append(json_file)
+    return json_files
 
+
+data_path = "../dataset/node-dal09-78-6.21"
+
+json_files = load_json_files(data_path)
 raw_data = load_data_generator(json_files)
 data = preprocess_data(raw_data)
-# ----------------
+
+
+gamma = 0.99  # 折扣因子
+epsilon_start = 1.0  # 贪婪策略起始值
+epsilon_end = 0.01  # 贪婪策略结束值
+epsilon_decay = 5000  # epsilon线性衰减的步数
+learning_rate = 0.001
+# 初始化经验回放缓冲区、当前状态和epsilon值。
+memory_capacity = 10000
+parameters = gamma, epsilon_start, epsilon_end, \
+             epsilon_decay, learning_rate, memory_capacity
+
 memory_size = 10
+time_slice_len = 5400
 len_data = len(data)
 rewards = []
 hit_rates = []
 
-env = EdgeNodeEnv(data, memory_size)
-agent = DQNAgent(env)
+env = EdgeNodeEnv(data, memory_size,time_slice_len)
+agent = DQNAgent(env,parameters)
 for i in range(100):
     result = agent.train(num_epochs=5000, len_data=len_data)
     reward, hit_rate = result
     rewards.append(reward)
     hit_rates.append(hit_rate)
     print("epoch:{}".format(i))
+    print("-----------------")
 
 # plt.switch_backend('TkAgg')
 plt.plot(range(len(rewards)), rewards)
