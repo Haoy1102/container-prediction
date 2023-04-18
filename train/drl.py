@@ -9,122 +9,79 @@ import torch.nn as nn
 import torch.optim as optim
 import re
 from sklearn.preprocessing import OneHotEncoder, StandardScaler, LabelEncoder
-import datetime
-import random
-import gym
-import numpy as np
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+import random
 import gym
 import numpy as np
+from gym import spaces
 
-class EdgeNodeEnv(gym.Env):
-    def __init__(self, data, memory_size,time_slice_len):
-        self.data = data  # 数据集合
-        self.memory_size = memory_size  # 内存大小
 
-        # 定义动作空间和观察空间。
-        self.action_space = gym.spaces.Discrete(2)
-        self.observation_space = gym.spaces.Box(low=-1, high=1000, shape=(memory_size + 2,), dtype=float)
-
-        self.containers_in_memory = []  # 当前在内存中的容器集合
-
-        # 定义时间片长度
-        self.time_slice_len = time_slice_len
-
-        # 定义内存中缓存的容器列表
-        self.cache_list = []
-        # 定义时间片计数器
-        self.time_step = 0
-
+class ContainerCacheEnv(gym.Env):
+    def __init__(self, data, memory_size, alpha,max_remain_slices):
+        self.data = data
+        self.alpha = alpha
+        self.memory_size = memory_size
+        self.max_remain_slices=max_remain_slices
+        self.action_space = spaces.MultiDiscrete([max_remain_slices+1]*15)
+        self.observation_space = spaces.MultiDiscrete([max_remain_slices+1]*15)
+        self.reset()
 
     def reset(self):
-
-        self.state = np.zeros(n)
-        self.request_list = []
-        self.cache_list = []
-        self.time_step = 0
-
-        self.containers_in_memory.clear()
-        # 初始化 current_step 变量为第一个请求位置.
-        self.current_step = 0
-        return self._get_observation()
+        self.total_cost = 0
+        self.cur_time = 0
+        self.observation_space = np.zeros(15, dtype=int)
+        return self.observation_space
 
     def step(self, action):
-        hit = False
-        done = False
-        # 获取当前请求容器类型
-        container_type = self.data[self.current_step]
-        if container_type in self.containers_in_memory:
-            reward = 3.0  # 命中缓存，给予正向奖励
-            hit = True
+        container_type, cache_time = action
+        cold_start_cost = 0
+
+        # 检查容器是否已经在内存中
+        if self.memory[container_type] > 0:
+            self.remaining_time[container_type] = cache_time
         else:
-            reward = -1.0  # 没有命中缓存，给予负向奖励
-            if len(self.containers_in_memory) >= self.memory_size:
-                # 内存已满, 需要清除一个容器再加载新容器
-                containers_to_remove = []
-                for c in self.containers_in_memory:
-                    if np.random.uniform() < (1 / len(self.containers_in_memory)):
-                        containers_to_remove.append(c)
+            cold_start_cost += 1
+            if np.sum(self.memory) == memory_size:
+                # 剔除剩余时间最少的容器
+                evict_idx = np.argmin(self.remaining_time)
+                self.memory[evict_idx] = 0
+                self.remaining_time[evict_idx] = 0
+            self.memory[container_type] = 1
+            self.remaining_time[container_type] = cache_time
 
-                if not containers_to_remove:  # 如果没有找到要删除的容器，则随机选择一个进行删除
-                    container_to_remove = np.random.choice(list(self.containers_in_memory))
-                    self.containers_in_memory.remove(container_to_remove)
+        # 更新缓存中的容器的剩余时间
+        self.remaining_time[self.memory > 0] -= 1
 
-                else:  # 找到了要删除的容器，则从列表中移除即可
-                    for c in containers_to_remove:
-                        self.containers_in_memory.remove(c)
+        # 计算缓存代价
+        cache_cost = np.sum(self.remaining_time[self.memory > 0])
+        # 计算总代价
+        total_cost = cold_start_cost + self.alpha * cache_cost
+        # 更新总代价
+        self.total_cost += total_cost
+        # 更新时间步数
+        self.cur_time += 1
 
-                self.containers_in_memory.add(container_type)
-
-            else:
-                # 内存未满, 直接将新容器加入内存
-                self.containers_in_memory.add(container_type)
-
-            if action == 0:  # 不保留缓存
-                if container_type in self.containers_in_memory:
-                    self.containers_in_memory.remove(container_type)
-
-            elif action == 1:  # 保留缓存
-                pass
-
-        if (self.current_step + 1) == len(self.data):
+        # 检查是否结尾
+        if self.cur_time >= len(self.data):
             done = True
+        else:
+            done = False
+            self.cur_request = self.data[self.cur_time]
 
-        info = {'hit': hit}
-        observation = self._get_observation()
-        self.current_step += 1  # 更新当前处理的请求位置.
+        # 返回 new state, reward, done
+        return (self.memory, self.remaining_time), -total_cost, done, {}
 
-        return observation, reward, done, info
+    def get_dqn_params(self):
+        input_size = self.observation_space.shape[0]
+        output_size = self.action_space.shape[0]
+        return input_size, output_size
 
-    def _get_observation(self):
-        """
-        返回当前环境观测到的状态信息.
-        当前请求的容器类型是否在内存中。如果是，则表示已经命中缓存；如果不是，则需要加载到内存。
-        内存利用率。可以通过计算当前内存使用情况与总内存大小之比来得出。
-        缓存在内存中的其他容器信息。例如，在清除一个缓存在内存中的容器时，可能希望选择最少被访问过或者大小较小等策略进行清理。
-        Returns :
-            ndarray : 状态信息数组.
-        """
-        # 获取当前请求容器类型
-        container_type = self.data[self.current_step]
+    def render(self, mode='human'):
+        pass
 
-        # 计算当前内存利用率
-        memory_utilization = len(self.containers_in_memory) / self.memory_size
 
-        # 创建一个长度为 self.memory_size 的全零数组
-        observation = np.full(shape=(self.memory_size,), fill_value=-1)
-        containers_sorted = sorted(self.containers_in_memory)
-        # 将缓存在内存中的其他容器信息填充到 observation 中
-        for i in range(len(containers_sorted)):
-            observation[i] = containers_sorted[i]
-
-        # 在 observation 数组开头添加当前请求容器类型是否在内存中和当前内存利用率两个元素
-        observation = np.concatenate(([int(container_type in self.containers_in_memory), memory_utilization],
-                                      observation))
-
-        return observation
 
 class DQN(nn.Module):
     def __init__(self, input_size, output_size):
@@ -138,6 +95,7 @@ class DQN(nn.Module):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         return self.fc3(x)
+
 
 class DQNAgent:
     def __init__(self, env,parameters):
@@ -161,7 +119,9 @@ class DQNAgent:
         self.current_epsilon = self.epsilon_start
 
         # 将模型和优化器放置在GPU上
-        self.model = DQN(env.observation_space.shape[0], env.action_space.n).to(device)
+        input_size,output_size = env.get_dqn_params()
+        self.model = DQN(input_size, output_size).to(device)
+
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate)
         self.loss_fn = nn.MSELoss()
 
@@ -243,6 +203,7 @@ class DQNAgent:
         print("total_reward:{}".format(total_reward))
         return total_reward, hit_rate
 
+# ----------------------------------------------------------------
 def transform_data(request):
     # 提取特征
     uri = request["uri"]
@@ -258,7 +219,7 @@ def transform_data(request):
 
     return [uri,timestamp]
 
-def preprocess_data(raw_data, threshold=270):
+def preprocess_data(raw_data, threshold=280):
     # 将原始数据转换为数据帧
     df = pd.DataFrame(raw_data, columns=["container_type","timestamp"])
 
@@ -304,6 +265,7 @@ def load_data_generator(json_files):
                 print("ValueError: " + str(value_err) + " in JSON file: " + json_file)
 
 # 加载数据集
+
 def load_json_files(data_path):
     json_files = []
     for root, dirs, files in os.walk(data_path):
@@ -320,7 +282,6 @@ json_files = load_json_files(data_path)
 raw_data = load_data_generator(json_files)
 data = preprocess_data(raw_data)
 
-
 gamma = 0.99  # 折扣因子
 epsilon_start = 1.0  # 贪婪策略起始值
 epsilon_end = 0.01  # 贪婪策略结束值
@@ -331,13 +292,19 @@ memory_capacity = 10000
 parameters = gamma, epsilon_start, epsilon_end, \
              epsilon_decay, learning_rate, memory_capacity
 
+max_remain_slices = 1000
+alpha=0.004
 memory_size = 10
-time_slice_len = 5400
 len_data = len(data)
 rewards = []
 hit_rates = []
 
-env = EdgeNodeEnv(data, memory_size,time_slice_len)
+# data = [[1, 0, 0, 0],
+#         [0, 0, 0, 0],
+#         [4, 0, 0, 0],
+#         [12, 0, 0, 0]]
+
+env = ContainerCacheEnv(data, memory_size,alpha,max_remain_slices)
 agent = DQNAgent(env,parameters)
 for i in range(100):
     result = agent.train(num_epochs=5000, len_data=len_data)

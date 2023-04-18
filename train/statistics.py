@@ -34,29 +34,33 @@ for item in data:
 
 uris = []
 for item in filtered_data:
-    uri_parts = item["http.request.uri"].split("/")[1:2] or ["default"]
-    uris.append("/".join(uri_parts))
+    # uri_parts = item["http.request.uri"].split("/")[1:2] or ["default"]
+    # uris.append("/".join(uri_parts))
+    uris.append(item["uri"])
 
 uri_counts = Counter(uris)
 total_count = sum(uri_counts.values())
 
 # 设置阈值
-threshold = 270
+threshold = 2000
 other_count = 0
-other_uri = "else"
 
 # 创建一个新的字典来存储合并后的uri_counts
 new_uri_counts = {}
 
-# 统计出现次数低于阈值的uri
+else2_count = 0
 for uri, count in uri_counts.items():
     if count < threshold:
         other_count += count
+    elif count >= 2000 and count <= 4000:
+        else2_count += count
     else:
         new_uri_counts[uri] = count
 
+
 # 将出现次数低于阈值的uri合并为else
-new_uri_counts[other_uri] = other_count
+new_uri_counts["miscellaneous"] = other_count
+new_uri_counts["small"] = else2_count
 
 # 将new_uri_counts字典转换为Counter对象
 new_uri_counts = Counter(new_uri_counts)
