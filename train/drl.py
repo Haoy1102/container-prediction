@@ -128,8 +128,6 @@ class DQNAgent:
     def act(self, state):
         # 根据当前状态选择动作。
 
-        device = next(self.model.parameters()).device  # 获取设备信息
-
         # 随机选择动作
         if random.random() < self.current_epsilon:
             return self.env.action_space.sample()
@@ -140,8 +138,6 @@ class DQNAgent:
 
     def replay_memory(self, batch_size):
         # 从经验回放缓冲区中随机抽取一批样本，并使用它们更新模型参数。
-
-        device = next(self.model.parameters()).device  # 获取设备信息
 
         if len(self.memory) < batch_size:
             return

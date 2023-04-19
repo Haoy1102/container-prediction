@@ -1,6 +1,7 @@
+import pickle
 import gym
-from gym import spaces
 import numpy as np
+from gym import spaces
 import torch.nn.functional as F
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -15,37 +16,35 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler, LabelEncoder
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-import random
-import gym
-import numpy as np
-from gym import spaces
-
 
 class ContainerCacheEnv(gym.Env):
-    def __init__(self, data):
+    def __init__(self, data, parameters):
+        max_remain_slices, max_cache_num, cache_slice_num, alpha, type_num = parameters
         # 初始化环境
         self.data = data  # 数据集
         self.time_step = 0  # 当前时间片
-        self.max_remain_slices = 1000  # 最大缓存时间片数
-        self.max_cache_num = 10  # 最大缓存容器数
-        self.cache_slice_num = 200
-        self.alpha = 0.004  # 缓存开销系数
-        self.type_num = 5
+        self.max_remain_slices = max_remain_slices  # 最大缓存时间片数
+        self.max_cache_num = max_cache_num  # 最大缓存容器数
+        self.cache_slice_num = cache_slice_num
+        self.alpha = alpha  # 缓存开销系数
+        self.type_num = type_num
         self.observation_space = spaces.Box(low=0, high=self.max_remain_slices, shape=(self.type_num * 2,),
                                             dtype=np.int32)  # 状态空间
         self.action_space = spaces.MultiBinary(self.type_num)  # 动作空间
         self.current_state = np.zeros(self.type_num * 2).astype(int)  # 当前状态
         self.cached_containers = []  # 缓存的容器
         self.total_cost = 0  # 总开销
+        self.total_start_cost = 0
 
     def step(self, action):
         # 执行动作
-        reward = 0
         done = False
         # 清除到期容器
         self.clear_expired_containers()
         # 计算开销
-        self.total_cost += self.calculate_cost()
+        step_cost, step_start_cost = self.calculate_cost()
+        self.total_cost += step_cost
+        self.total_start_cost += step_start_cost
         # 针对action更新状态空间
         self.current_state = self.update_state_space(action)
         # 更新时间片
@@ -55,7 +54,7 @@ class ContainerCacheEnv(gym.Env):
         else:
             # 没结束，将下一时刻的data组合放入state，以供模型学习
             self.compose_state()
-        reward = -self.total_cost
+        reward = -step_cost
         return self.current_state, reward, done, {}
 
     def reset(self):
@@ -69,6 +68,7 @@ class ContainerCacheEnv(gym.Env):
         self.current_state[indexs] = 1
         self.cached_containers = []
         self.total_cost = 0
+        self.total_start_cost = 0
         return self.current_state
 
     def update_state_space(self, action):
@@ -95,12 +95,11 @@ class ContainerCacheEnv(gym.Env):
             if self.current_state[value] == 0:
                 # 启动容器开销
                 startup_cost += 1
-
         # 缓存容器开销
         cache_cost = len(np.extract(self.current_state[:self.type_num] != 0, self.current_state[:self.type_num]))
         # 总开销
         cost = startup_cost + self.alpha * cache_cost
-        return cost
+        return cost, startup_cost
 
     def clear_expired_containers(self):
         # 清除到期容器
@@ -142,7 +141,8 @@ import torch.optim as optim
 
 
 class DQNAgent:
-    def __init__(self, env, gamma=0.99, epsilon=1.0, epsilon_min=0.01, epsilon_decay=0.995, batch_size=32):
+    def __init__(self, env, parameters):
+        gamma, epsilon, epsilon_min, epsilon_decay, batch_size = parameters
         self.env = env
         self.memory = deque(maxlen=10000)
         self.gamma = gamma
@@ -150,14 +150,15 @@ class DQNAgent:
         self.epsilon_min = epsilon_min
         self.epsilon_decay = epsilon_decay
         self.batch_size = batch_size
-        self.model = DQN(env.observation_space.shape[0], 2 ** env.action_space.shape[0])
-        self.target_model = DQN(env.observation_space.shape[0], 2 ** env.action_space.shape[0])
+        self.model = DQN(env.observation_space.shape[0], 2 ** env.action_space.shape[0]).to(device)
+        self.target_model = DQN(env.observation_space.shape[0], 2 ** env.action_space.shape[0]).to(device)
         self.optimizer = optim.Adam(self.model.parameters(), lr=0.001)
 
     def act(self, state):
         time_step = self.env.time_step
         np_slice = np.array(self.env.data[time_step])
 
+        # TODO 考虑改一下，当随机的时候，没有任何请求返回全0，不随机的时候。。。
         # 如果当前时间片没有任何请求，则返回全为0的动作向量
         if np_slice.size == 0:
             return np.zeros(self.env.action_space.shape[0]).astype(int)
@@ -177,7 +178,7 @@ class DQNAgent:
             # 否则，使用当前模型预测最优动作
             else:
                 # 应该把self.env.current_state其他列归0或者出来的act其他列归0
-                act_values = self.model(torch.FloatTensor(state)).detach().numpy()
+                act_values = self.model(torch.cuda.FloatTensor(state)).detach().cpu().numpy()
                 # 取消---act_values只对本次请求的容器做预测，其他设为0
                 # act_values[np.logical_not(np.isin(np.arange(len(act_values)), np_slice_unique))] = 0
                 max_index = np.argmax(act_values).item()  # 获取最大值的索引
@@ -192,20 +193,32 @@ class DQNAgent:
     def replay(self):
         if len(self.memory) < self.batch_size:
             return
+        if self.epsilon > self.epsilon_min:
+            self.epsilon *= self.epsilon_decay
         batch = random.sample(self.memory, self.batch_size)
         states, targets = [], []
         for state, action, reward, next_state, done in batch:
             target = reward
             if not done:
                 target = reward + self.gamma * np.amax(
-                    self.target_model(torch.FloatTensor(next_state)).detach().numpy())
-            target_f = self.model(torch.FloatTensor(state)).detach().numpy()
+                    self.target_model(torch.cuda.FloatTensor(next_state)).detach().cpu().numpy())
+            target_f = self.model(torch.cuda.FloatTensor(state)).detach().cpu().numpy()
             action_index = int(''.join([str(int(a)) for a in action]), 2)
             target_f[action_index] = target
             states.append(state)
             targets.append(target_f)
         self.optimizer.zero_grad()
-        loss = F.mse_loss(self.model(torch.FloatTensor(states)), torch.FloatTensor(targets))
+        # loss = F.mse_loss(self.model(torch.cuda.FloatTensor(states)), torch.cuda.FloatTensor(targets))
+        states = np.array(states)
+        targets = np.array(targets)
+
+        # 将numpy数组转换为PyTorch张量并将数据移动到GPU上
+        states = torch.as_tensor(states, dtype=torch.float32, device=device)
+        targets = torch.as_tensor(targets, dtype=torch.float32, device=device)
+
+        # 计算损失
+        predictions = self.model(states)
+        loss = F.mse_loss(predictions, targets)
         loss.backward()
         self.optimizer.step()
 
@@ -213,6 +226,9 @@ class DQNAgent:
         self.target_model.load_state_dict(self.model.state_dict())
 
     def train(self, episodes):
+        total_start_cost_list = []
+        total_cache_cost_list = []
+        total_cost_list = []
         for e in range(episodes):
             state = self.env.reset()
             done = False
@@ -222,26 +238,37 @@ class DQNAgent:
                 self.remember(state, action, reward, next_state, done)
                 state = next_state
                 self.replay()
-            if self.epsilon > self.epsilon_min:
-                self.epsilon *= self.epsilon_decay
+
             self.target_train()
+
+            # Append cost data to lists
+            total_start_cost_list.append(self.env.total_start_cost)
+            total_cost_list.append(self.env.total_cost)
+            cache_cost = self.env.total_cost - self.env.total_start_cost
+            total_cache_cost_list.append(cache_cost)
+
             print("epoch:{}".format(e))
+            print("total_start_cost = {}".format(self.env.total_start_cost))
+            print("total_cache_cost = {}".format(cache_cost))
             print("total_cost = {}".format(self.env.total_cost))
             print("-----------------")
+        # Return the cost data lists
+        return total_start_cost_list, total_cache_cost_list, total_cost_list
 
     def test(self):
         state = self.env.reset()
         done = False
         while not done:
             # action = np.argmax(self.model(torch.FloatTensor(state)).detach().numpy())
-            act_values = self.model(torch.FloatTensor(state)).detach().numpy()
+            act_values = self.model(torch.cuda.FloatTensor(state)).detach().cpu().numpy()
             # 取消---act_values只对本次请求的容器做预测，其他设为0
             # act_values[np.logical_not(np.isin(np.arange(len(act_values)), np_slice_unique))] = 0
             max_index = np.argmax(act_values).item()  # 获取最大值的索引
             binary_index = np.binary_repr(max_index, width=5)  # 将索引转换为二进制向量
             action = np.array(list(binary_index), dtype=int)
             state, _, done, _ = self.env.step(action)
-        return self.env.total_cost
+            cache_cost = self.env.total_cost - self.env.total_start_cost
+        return self.env.total_cost, self.env.total_start_cost, cache_cost
 
 
 # data = [[0, 4, 4],
@@ -264,7 +291,7 @@ def transform_data(request):
 
     return [uri, timestamp]
 
-def preprocess_data(raw_data, threshold=1000):
+def preprocess_data(raw_data,interval):
     # 将原始数据转换为数据帧
     df = pd.DataFrame(raw_data, columns=["container_type", "timestamp"])
 
@@ -285,10 +312,10 @@ def preprocess_data(raw_data, threshold=1000):
     # 将ISO 8601格式的时间戳转换为pandas的时间戳，并将时区设置为UTC
     df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
 
-    # 按照每4秒一个时间片进行分割
+    # 按照每n秒一个时间片进行分割
     start_time = pd.Timestamp("2017-06-21T06:00:00.000Z", tz='UTC')
     end_time = pd.Timestamp("2017-06-21T12:00:00.000Z", tz='UTC')
-    time_slices = pd.date_range(start=start_time, end=end_time, freq="1S")
+    time_slices = pd.date_range(start=start_time, end=end_time, freq=interval)
     container_type_slices = []
     for i in range(len(time_slices) - 1):
         start_time_slice = time_slices[i]
@@ -322,20 +349,74 @@ def load_json_files(data_path):
     return json_files
 
 data_path = "../dataset/node-dal09-78-6.21"
+# n秒为1个时间片
+interval="1S"
 
 json_files = load_json_files(data_path)
 raw_data = load_data_generator(json_files)
-data = preprocess_data(raw_data)
+data = preprocess_data(raw_data,interval)
 
 print("数据处理完成")
 
+max_cache_num = 10  # 最大缓存容器数
+alpha = 0.004  # 缓存开销系数
+cache_slice_num = int(1/alpha/5)
+type_num = 5
+max_remain_slices = 1000  # 最大缓存时间片数
+parameters_env = max_remain_slices, max_cache_num, cache_slice_num, alpha, type_num
+
+gamma = 0.99
+# epsilon = 1.0
+# epsilon_min = 0.01
+# epsilon_decay = 0.995
+epsilon = 1.0
+epsilon_min = 0.1
+epsilon_decay = 0.999 #大约690次迭代后小于0.5 每个batch_size乘一次，大约在22080次运行小于0.5
+batch_size = 32
+parameters_agent = gamma, epsilon, epsilon_min, epsilon_decay, batch_size
+
 # 初始化环境和DQNAgent
-env = ContainerCacheEnv(data)
-agent = DQNAgent(env)
+env = ContainerCacheEnv(data, parameters_env)
+agent = DQNAgent(env, parameters_agent)
 
 # 训练模型
-agent.train(100)
+total_start_cost_list, \
+total_cache_cost_list, \
+total_cost_list = agent.train(10)
 
 # 测试模型
 cost = agent.test()
-print("Total cost:", cost)
+total_cost, start_cost, cache_cost = cost
+print("------------test-------------")
+print("Total cost:", total_cost)
+print("Start cost:", start_cost)
+print("Cache cost:", cache_cost)
+
+# Save the trained DQNAgent model
+with open('dqn_agent.pkl', 'wb') as f:
+    pickle.dump(agent, f)
+
+# Load the saved DQNAgent model
+# with open('dqn_agent.pkl', 'rb') as f:
+#     agent = pickle.load(f)
+
+# Plot total_start_cost
+plt.plot(total_start_cost_list)
+plt.title('Total Start Cost')
+plt.xlabel('Epoch')
+plt.ylabel('Cost')
+plt.show()
+
+# Plot total_cache_cost
+plt.plot(total_cache_cost_list)
+plt.title('Total Cache Cost')
+plt.xlabel('Epoch')
+plt.ylabel('Cost')
+plt.show()
+
+# Plot total_cost
+plt.plot(total_cost_list)
+plt.title('Total Cost')
+plt.xlabel('Epoch')
+plt.ylabel('Cost')
+plt.show()
