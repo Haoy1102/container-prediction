@@ -185,10 +185,10 @@ def preprocess_data(raw_data,interval):
     freq = df["container_type"].value_counts()
 
     # 将出现频率低于阈值的类型替换为"else"
-    low_freq_types = freq[freq <= 2000].index
+    low_freq_types = freq[freq <= 270].index
     df["container_type"].replace(low_freq_types, "miscellaneous", inplace=True)
-    low_freq_types = freq[(freq > 2000) & (freq <= 4000)].index
-    df["container_type"].replace(low_freq_types, "small", inplace=True)
+    # low_freq_types = freq[(freq > 2000) & (freq <= 4000)].index
+    # df["container_type"].replace(low_freq_types, "small", inplace=True)
 
     # 使用标签编码
     container_type = df["container_type"].values
@@ -247,7 +247,7 @@ print("数据处理完成")
 max_cache_num = 10  # 最大缓存容器数-无用
 alpha = 0.004  # 缓存开销系数
 cache_slice_num = 1/alpha
-type_num = 5
+type_num = 15
 max_remain_slices = 1000  # 最大缓存时间片数-无用
 parameters_env = max_remain_slices, max_cache_num, cache_slice_num, alpha, type_num
 

@@ -1,0 +1,45 @@
+brotlipy @ file:///home/conda/feedstock_root/build_artifacts/brotlipy_1666764652625/work
+certifi==2022.12.7
+cffi @ file:///home/conda/feedstock_root/build_artifacts/cffi_1671179356964/work
+charset-normalizer @ file:///home/conda/feedstock_root/build_artifacts/charset-normalizer_1661170624537/work
+cloudpickle==2.2.1
+contourpy==1.0.7
+cryptography @ file:///home/conda/feedstock_root/build_artifacts/cryptography-split_1677821248474/work
+cycler==0.11.0
+docopt==0.6.2
+fonttools==4.39.2
+gym==0.26.2
+gym-notices==0.0.8
+idna @ file:///home/conda/feedstock_root/build_artifacts/idna_1663625384323/work
+# importlib-metadata==6.1.0
+importlib-resources==5.12.0
+joblib==1.2.0
+kiwisolver==1.4.4
+matplotlib==3.7.1
+mkl-fft==1.3.1
+mkl-random==1.2.2
+mkl-service==2.4.0
+numpy @ file:///croot/numpy_and_numpy_base_1672336185480/work
+packaging==23.0
+pandas==1.5.3
+Pillow @ file:///home/conda/feedstock_root/build_artifacts/pillow_1675487152289/work
+pipreqs==0.4.13
+pycparser @ file:///home/conda/feedstock_root/build_artifacts/pycparser_1636257122734/work
+pyOpenSSL @ file:///home/conda/feedstock_root/build_artifacts/pyopenssl_1672659226110/work
+pyparsing==3.0.9
+PySocks @ file:///home/conda/feedstock_root/build_artifacts/pysocks_1661604839144/work
+python-dateutil==2.8.2
+pytz==2022.7.1
+requests @ file:///home/conda/feedstock_root/build_artifacts/requests_1673863902341/work
+scikit-learn==1.2.2
+scipy==1.10.1
+six @ file:///home/conda/feedstock_root/build_artifacts/six_1620240208055/work
+threadpoolctl==3.1.0
+# torch==1.12.1
+# torchaudio==0.12.1
+# torchvision==0.13.1
+# tqdm==4.65.0
+typing_extensions @ file:///home/conda/feedstock_root/build_artifacts/typing_extensions_1678559861143/work
+urllib3 @ file:///home/conda/feedstock_root/build_artifacts/urllib3_1678635778344/work
+yarg==0.1.9
+zipp==3.15.0
