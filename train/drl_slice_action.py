@@ -18,6 +18,11 @@ import time
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 start_time = time.time()
 
+import sys
+# 打开文件以写入模式
+# sys.stdout = open('/home/featurize/work/output.txt', 'w')
+# sys.stdout = open('output.txt', 'w')
+
 class ContainerCacheEnv(gym.Env):
     def __init__(self, data, parameters):
         max_remain_slices, max_cache_num, cache_slice_num, alpha, type_num = parameters
@@ -244,6 +249,32 @@ class DQNAgent:
     def target_train(self):
         self.target_model.load_state_dict(self.model.state_dict())
 
+    def draw(self,path,cost):
+        total_start_cost_list, total_cache_cost_list, total_cost_list=cost
+        os.makedirs(path)
+
+        # Save plots in the directory
+        plt.plot(total_start_cost_list)
+        plt.title('Total Start Cost')
+        plt.xlabel('Epoch')
+        plt.ylabel('Cost')
+        plt.savefig(os.path.join(path, 'total_start_cost.png'))
+        plt.close()
+
+        plt.plot(total_cache_cost_list)
+        plt.title('Total Cache Cost')
+        plt.xlabel('Epoch')
+        plt.ylabel('Cost')
+        plt.savefig(os.path.join(path, 'total_cache_cost.png'))
+        plt.close()
+
+        plt.plot(total_cost_list)
+        plt.title('Total Cost')
+        plt.xlabel('Epoch')
+        plt.ylabel('Cost')
+        plt.savefig(os.path.join(path, 'total_cost.png'))
+        plt.close()
+
     def train(self, episodes):
 
         total_start_cost_list = []
@@ -262,21 +293,35 @@ class DQNAgent:
 
             self.target_train()
 
+            # Save the trained DQNAgent model
+            with open('dqn_agent.pkl', 'wb') as f:
+                pickle.dump(agent, f)
+
             # info
             total_start_cost_list.append(self.env.total_start_cost)
             total_cost_list.append(self.env.total_cost)
             cache_cost = self.env.total_cost - self.env.total_start_cost
             total_cache_cost_list.append(cache_cost)
 
-            print("epoch:{}".format(e))
+            cost=total_start_cost_list, total_cache_cost_list, total_cost_list
+
+            if e > 20 and e % 5 == 0:
+            # if e>0:
+                path = os.path.join('result', str(e))
+                self.draw(path,cost)
+
+            print("------------epoch:{}------------".format(e))
+            print("模型保存成功")
             print("total_start_cost = {}".format(self.env.total_start_cost))
             print("total_cache_cost = {}".format(cache_cost))
             print("total_cost = {}".format(self.env.total_cost))
-            print("-----------------")
+            sys.stdout.flush()
 
             step_end_time = time.time()
             step_elapsed_time = step_end_time - step_start_time
             print("程序耗时：", step_elapsed_time, "s")
+            self.test()
+            # print("-----------------")
         return total_start_cost_list, total_cache_cost_list, total_cost_list
 
     def test(self):
@@ -292,10 +337,19 @@ class DQNAgent:
             # action = np.array(list(binary_index), dtype=int)
             state, _, done, _ = self.env.step(action)
             cache_cost = self.env.total_cost - self.env.total_start_cost
-        return self.env.total_cost, self.env.total_start_cost, cache_cost
+        cost = self.env.total_cost, self.env.total_start_cost, cache_cost
+        total_cost, start_cost, cache_cost = cost
+        print("------------test-------------")
+        print("Start cost:", start_cost)
+        print("Cache cost:", cache_cost)
+        print("Total cost:", total_cost)
+        print("------------end-------------")
+        sys.stdout.flush()
+        return
+
+    # ----------------------------------------------------------------
 
 
-# ----------------------------------------------------------------
 def transform_data(request):
     # 提取特征
     uri = request["uri"]
@@ -320,7 +374,7 @@ def preprocess_data(raw_data, interval):
     freq = df["container_type"].value_counts()
 
     # 将出现频率低于阈值的类型替换为"else"
-    low_freq_types = freq[freq <= 270].index
+    low_freq_types = freq[freq <= 5].index
     df["container_type"].replace(low_freq_types, "miscellaneous", inplace=True)
     # low_freq_types = freq[(freq > 2000) & (freq <= 4000)].index
     # df["container_type"].replace(low_freq_types, "small", inplace=True)
@@ -335,7 +389,7 @@ def preprocess_data(raw_data, interval):
 
     # 按照每n秒一个时间片进行分割
     start_time = pd.Timestamp("2017-06-21T06:00:00.000Z", tz='UTC')
-    end_time = pd.Timestamp("2017-06-21T12:00:00.000Z", tz='UTC')
+    end_time = pd.Timestamp("2017-06-21T6:10:00.000Z", tz='UTC')
     time_slices = pd.date_range(start=start_time, end=end_time, freq=interval)
     container_type_slices = []
     for i in range(len(time_slices) - 1):
@@ -372,10 +426,10 @@ def load_json_files(data_path):
     return json_files
 
 
-data_path = "../dataset/node-dal09-78-6.21"
+data_path = "../dataset/node-10min"
 # n秒为1个时间片
 interval = "1S"
-
+#
 json_files = load_json_files(data_path)
 raw_data = load_data_generator(json_files)
 data = preprocess_data(raw_data, interval)
@@ -386,10 +440,11 @@ data = preprocess_data(raw_data, interval)
 #         [3]]
 
 print("数据处理完成")
+sys.stdout.flush()
 
 max_cache_num = 10  # 最大缓存容器数
 alpha = 0.004  # 缓存开销系数
-cache_slice_num = int(1 / alpha)
+cache_slice_num = int(1 / alpha) / 2
 type_num = 15
 max_remain_slices = int(1 / alpha) * 5  # 最大缓存时间片数 可以考虑和FC相同 设置成int(1/alpha)
 parameters_env = max_remain_slices, max_cache_num, cache_slice_num, alpha, type_num
@@ -402,7 +457,7 @@ epsilon = 1.0
 epsilon_min = 0.1
 # epsilon_decay=0.9999 迭代6,931次才能保证结果小于0.5  6,931*32/21600=10; 迭代10,001次保证结果小于0.1 10001*32/21600=14
 # epsilon_decay=0.9995 迭代1,387次才能保证结果小于0.5  1387*32/21600=2; 迭代2,773次保证结果小于0.1 2773*32/21600=4
-epsilon_decay = 0.9999  # 大约690次迭代后小于0.5 每个batch_size乘一次，大约在22080次运行小于0.5
+epsilon_decay = 0.995  # 大约690次迭代后小于0.5 每个batch_size乘一次，大约在22080次运行小于0.5
 batch_size = 32
 parameters_agent = gamma, epsilon, epsilon_min, epsilon_decay, batch_size
 
@@ -416,41 +471,16 @@ total_cache_cost_list, \
 total_cost_list = agent.train(100)
 
 # 测试模型
-cost = agent.test()
-total_cost, start_cost, cache_cost = cost
-print("------------test-------------")
-print("Total cost:", total_cost)
-print("Start cost:", start_cost)
-print("Cache cost:", cache_cost)
+# agent.test()
+
 
 # Save the trained DQNAgent model
-with open('dqn_agent.pkl', 'wb') as f:
-    pickle.dump(agent, f)
+# with open('/home/featurize/work/output.txt', 'wb') as f:
+#     pickle.dump(agent, f)
 
 # # Load the saved DQNAgent model
 # with open('dqn_agent.pkl', 'rb') as f:
 #     agent = pickle.load(f)
-
-# Plot total_start_cost
-plt.plot(total_start_cost_list)
-plt.title('Total Start Cost')
-plt.xlabel('Epoch')
-plt.ylabel('Cost')
-plt.show()
-
-# Plot total_cache_cost
-plt.plot(total_cache_cost_list)
-plt.title('Total Cache Cost')
-plt.xlabel('Epoch')
-plt.ylabel('Cost')
-plt.show()
-
-# Plot total_cost
-plt.plot(total_cost_list)
-plt.title('Total Cost')
-plt.xlabel('Epoch')
-plt.ylabel('Cost')
-plt.show()
 
 end_time = time.time()
 elapsed_time = end_time - start_time

@@ -14,9 +14,6 @@ import torch.optim as optim
 import re
 from sklearn.preprocessing import OneHotEncoder, StandardScaler, LabelEncoder
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
 class ContainerCacheEnv(gym.Env):
     def __init__(self, data, parameters):
         max_remain_slices, max_cache_num, cache_slice_num, alpha, type_num = parameters
@@ -28,10 +25,6 @@ class ContainerCacheEnv(gym.Env):
         self.cache_slice_num = cache_slice_num
         self.alpha = alpha  # 缓存开销系数
         self.type_num = type_num
-        self.observation_space = spaces.Box(low=0, high=self.max_remain_slices, shape=(self.type_num * 2,),
-                                            dtype=np.int32)  # 状态空间
-        self.action_space = spaces.MultiBinary(self.type_num)  # 动作空间
-        self.current_state = np.zeros(self.type_num * 2).astype(int)  # 当前状态
         self.cached_containers = []  # 缓存的容器
         self.total_cost = 0  # 总开销
         self.total_start_cost = 0
@@ -112,18 +105,6 @@ class ContainerCacheEnv(gym.Env):
         indexs = np_slice.tolist()
         self.current_state[indexs] = 1
 
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
-
-
-import random
-from collections import deque
-import torch.optim as optim
-
-
 class FixCache:
     def __init__(self, env):
         self.env = env
@@ -135,14 +116,14 @@ class FixCache:
 
         # 如果当前时间片没有任何请求，则返回全为0的动作向量
         if np_slice.size == 0:
-            return np.zeros(self.env.action_space.shape[0]).astype(int)
+            return np.zeros(self.env.type_num).astype(int)
         # 如果请求了k和m容器，则只在k和m位置上做预测，预测n个时间片
         else:
             # 固定缓存即可
             np_slice_unique = np.unique(np_slice)
             indices = np_slice_unique.tolist()
 
-            full_predicted_actions = np.zeros(self.env.action_space.shape[0]).astype(int)
+            full_predicted_actions = np.zeros(self.env.type_num).astype(int)
             full_predicted_actions[indices] = 1
             return full_predicted_actions
             # 将预测结果插入到全局动作向量中
@@ -157,24 +138,15 @@ class FixCache:
         return self.env.total_cost, self.env.total_start_cost, cache_cost
 
 
-# data = [[0, 4, 4],
-#         [],
-#         [4],
-#         [3]]
+data = [[0, 4, 4],
+        [],
+        [4],
+        [3]]
 # ----------------------------------------------------------------
 def transform_data(request):
     # 提取特征
     uri = request["uri"]
     timestamp = request["timestamp"]
-
-    # match = re.search(r"v2/([^/]+)/([^/]+)", uri)
-    # if match:
-    #     uri_parts = match.groups()
-    #     # uri = "/".join(uri_parts)
-    #     uri = uri_parts[0]
-    # else:
-    #     uri = "v2"
-
     return [uri, timestamp]
 
 def preprocess_data(raw_data,interval):
@@ -185,10 +157,10 @@ def preprocess_data(raw_data,interval):
     freq = df["container_type"].value_counts()
 
     # 将出现频率低于阈值的类型替换为"else"
-    low_freq_types = freq[freq <= 270].index
+    low_freq_types = freq[freq <= 2000].index
     df["container_type"].replace(low_freq_types, "miscellaneous", inplace=True)
-    # low_freq_types = freq[(freq > 2000) & (freq <= 4000)].index
-    # df["container_type"].replace(low_freq_types, "small", inplace=True)
+    low_freq_types = freq[(freq > 2000) & (freq <= 4000)].index
+    df["container_type"].replace(low_freq_types, "small", inplace=True)
 
     # 使用标签编码
     container_type = df["container_type"].values
@@ -247,7 +219,7 @@ print("数据处理完成")
 max_cache_num = 10  # 最大缓存容器数-无用
 alpha = 0.004  # 缓存开销系数
 cache_slice_num = 1/alpha
-type_num = 15
+type_num = 5
 max_remain_slices = 1000  # 最大缓存时间片数-无用
 parameters_env = max_remain_slices, max_cache_num, cache_slice_num, alpha, type_num
 

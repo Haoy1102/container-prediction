@@ -21,7 +21,7 @@ for json_file in tqdm(json_files):
 import datetime
 
 start_time = datetime.datetime(2017, 6, 21, 6, 0, 0)
-end_time = datetime.datetime(2017, 6, 21, 12, 0, 0)
+end_time = datetime.datetime(2017, 6, 21, 6, 10, 0)
 
 filtered_data = []
 for item in data:
@@ -42,7 +42,7 @@ uri_counts = Counter(uris)
 total_count = sum(uri_counts.values())
 
 # 设置阈值
-threshold = 270
+threshold = 0
 other_count = 0
 
 # 创建一个新的字典来存储合并后的uri_counts
