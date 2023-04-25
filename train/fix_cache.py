@@ -217,7 +217,7 @@ data = preprocess_data(raw_data,interval)
 print("数据处理完成")
 
 max_cache_num = 10  # 最大缓存容器数-无用
-alpha = 0.004  # 缓存开销系数
+alpha = 0.0001  # 缓存开销系数
 cache_slice_num = 1/alpha
 type_num = 15
 max_remain_slices = 1000  # 最大缓存时间片数-无用

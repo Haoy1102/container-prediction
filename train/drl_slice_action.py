@@ -183,17 +183,11 @@ class DQNAgent:
         time_step = self.env.time_step
         np_slice = np.array(self.env.data[time_step])
 
-        # TODO 考虑改一下，当随机的时候，没有任何请求返回全0，不随机的时候。。。
         # 如果当前时间片没有任何请求，则返回全为0的动作向量
         if np_slice.size == 0:
             return 0
         # 如果请求了k和m容器，则只在k和m位置上做预测，预测n个时间片
         else:
-            # 在请求不为0的位置上做预测
-            # np_slice_unique = np.unique(np_slice)
-            # indices = np_slice_unique.tolist()
-            # indices = np.where(self.env.data[time_step] > 0)[0]
-            # state_at_indices = state[indices]
             # 以epsilon的概率随机选择一个动作，以便探索新的策略
             if np.random.rand() <= self.epsilon:
                 predicted_actions = self.env.action_space.sample()
@@ -205,7 +199,6 @@ class DQNAgent:
                 # 应该把self.env.current_state其他列归0或者出来的act其他列归0
                 act_values = self.model(torch.cuda.FloatTensor(state)).detach().cpu().numpy()
                 # 取消---act_values只对本次请求的容器做预测，其他设为0
-                # act_values[np.logical_not(np.isin(np.arange(len(act_values)), np_slice_unique))] = 0
                 predicted_actions = np.argmax(act_values).item()  # 获取最大值的索引
 
             # 将预测结果插入到全局动作向量中
@@ -276,7 +269,6 @@ class DQNAgent:
         plt.close()
 
     def train(self, episodes):
-
         total_start_cost_list = []
         total_cache_cost_list = []
         total_cost_list = []
